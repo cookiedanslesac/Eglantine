@@ -208,6 +208,7 @@ bool Inst::MayHaveSideEffects() const noexcept {
     case IR::Opcode::BindlessImageAtomicSMin32:
     case IR::Opcode::BindlessImageAtomicUMin32:
     case IR::Opcode::BindlessImageAtomicSMax32:
+    case IR::Opcode::BindlessImageAtomicUMax64:
     case IR::Opcode::BindlessImageAtomicUMax32:
     case IR::Opcode::BindlessImageAtomicInc32:
     case IR::Opcode::BindlessImageAtomicDec32:
@@ -219,6 +220,7 @@ bool Inst::MayHaveSideEffects() const noexcept {
     case IR::Opcode::BoundImageAtomicSMin32:
     case IR::Opcode::BoundImageAtomicUMin32:
     case IR::Opcode::BoundImageAtomicSMax32:
+    case IR::Opcode::BoundImageAtomicUMax64:
     case IR::Opcode::BoundImageAtomicUMax32:
     case IR::Opcode::BoundImageAtomicInc32:
     case IR::Opcode::BoundImageAtomicDec32:
@@ -230,6 +232,7 @@ bool Inst::MayHaveSideEffects() const noexcept {
     case IR::Opcode::ImageAtomicSMin32:
     case IR::Opcode::ImageAtomicUMin32:
     case IR::Opcode::ImageAtomicSMax32:
+    case IR::Opcode::ImageAtomicUMax64:
     case IR::Opcode::ImageAtomicUMax32:
     case IR::Opcode::ImageAtomicInc32:
     case IR::Opcode::ImageAtomicDec32:

@@ -203,6 +203,9 @@ IR::Opcode IndexedInstruction(const IR::Inst& inst) {
     case IR::Opcode::BoundImageAtomicSMax32:
     case IR::Opcode::BindlessImageAtomicSMax32:
         return IR::Opcode::ImageAtomicSMax32;
+    case IR::Opcode::BoundImageAtomicUMax64:
+    case IR::Opcode::BindlessImageAtomicUMax64:
+        return IR::Opcode::ImageAtomicUMax64;
     case IR::Opcode::BoundImageAtomicUMax32:
     case IR::Opcode::BindlessImageAtomicUMax32:
         return IR::Opcode::ImageAtomicUMax32;
@@ -237,6 +240,7 @@ bool IsStorageImageOpcode(IR::Opcode opcode) {
     case IR::Opcode::ImageAtomicUMin32:
     case IR::Opcode::ImageAtomicSMax32:
     case IR::Opcode::ImageAtomicUMax32:
+    case IR::Opcode::ImageAtomicUMax64:
     case IR::Opcode::ImageAtomicInc32:
     case IR::Opcode::ImageAtomicDec32:
     case IR::Opcode::ImageAtomicAnd32:
@@ -281,6 +285,7 @@ bool IsBindless(const IR::Inst& inst) {
     case IR::Opcode::BindlessImageAtomicUMin32:
     case IR::Opcode::BindlessImageAtomicSMax32:
     case IR::Opcode::BindlessImageAtomicUMax32:
+    case IR::Opcode::BindlessImageAtomicUMax64:
     case IR::Opcode::BindlessImageAtomicInc32:
     case IR::Opcode::BindlessImageAtomicDec32:
     case IR::Opcode::BindlessImageAtomicAnd32:
@@ -305,6 +310,7 @@ bool IsBindless(const IR::Inst& inst) {
     case IR::Opcode::BoundImageAtomicUMin32:
     case IR::Opcode::BoundImageAtomicSMax32:
     case IR::Opcode::BoundImageAtomicUMax32:
+    case IR::Opcode::BoundImageAtomicUMax64:
     case IR::Opcode::BoundImageAtomicInc32:
     case IR::Opcode::BoundImageAtomicDec32:
     case IR::Opcode::BoundImageAtomicAnd32:
@@ -1277,6 +1283,7 @@ void TexturePass(Environment& env, IR::Program& program, const HostTranslateInfo
         case IR::Opcode::ImageAtomicUMin32:
         case IR::Opcode::ImageAtomicSMax32:
         case IR::Opcode::ImageAtomicUMax32:
+        case IR::Opcode::ImageAtomicUMax64:
         case IR::Opcode::ImageAtomicInc32:
         case IR::Opcode::ImageAtomicDec32:
         case IR::Opcode::ImageAtomicAnd32:
@@ -1289,10 +1296,14 @@ void TexturePass(Environment& env, IR::Program& program, const HostTranslateInfo
             }
             const bool is_written{inst->GetOpcode() != IR::Opcode::ImageRead};
             const bool is_read{inst->GetOpcode() != IR::Opcode::ImageWrite};
-            const bool is_integer{is_texture_pixel_format_integer(cbuf)};
+            const ImageFormat format{inst->GetOpcode() == IR::Opcode::ImageAtomicUMax64
+                                         ? ImageFormat::R64_UINT
+                                         : flags.image_format.Value()};
+            const bool is_integer{format == ImageFormat::R64_UINT ||
+                                  is_texture_pixel_format_integer(cbuf)};
             if (flags.type == TextureType::Buffer) {
                 index = descriptors.Add(ImageBufferDescriptor{
-                    .format = flags.image_format,
+                    .format = format,
                     .is_written = is_written,
                     .is_read = is_read,
                     .is_integer = is_integer,
@@ -1305,7 +1316,7 @@ void TexturePass(Environment& env, IR::Program& program, const HostTranslateInfo
             } else {
                 index = descriptors.Add(ImageDescriptor{
                     .type = flags.type,
-                    .format = flags.image_format,
+                    .format = format,
                     .is_written = is_written,
                     .is_read = is_read,
                     .is_integer = is_integer,
