@@ -51,6 +51,11 @@ std::optional<OutAttr> OutputAttrPointer(EmitContext& ctx, IR::Attribute attr) {
         const u32 index{IR::GenericAttributeIndex(attr)};
         const u32 element{IR::GenericAttributeElement(attr)};
         const GenericElementInfo& info{ctx.output_generics.at(index).at(element)};
+        if (!Sirit::ValidId(info.id)) {
+            LOG_WARNING(Shader, "Ignoring store to undeclared output generic {}.{}", index,
+                        element);
+            return std::nullopt;
+        }
         if (info.num_components == 1) {
             return info.id;
         } else {
