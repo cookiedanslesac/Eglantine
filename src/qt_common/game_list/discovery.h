@@ -1,16 +1,17 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eglantine Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// SPDX-License-Identifier: GPL-3.0-or-later
-
 #pragma once
 
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include "core/loader/loose_directory.h"
 
 namespace GameListDiscovery {
 
@@ -27,6 +28,46 @@ inline bool IsExeFS(const std::filesystem::path& path) {
            std::filesystem::is_regular_file(path / "main.npdm", ec);
 }
 
+// Only edition layouts collapse sibling executables; legacy base/update entries stay distinct.
+inline bool IsUpgradeProgramMain(const std::filesystem::path& main) {
+    const auto equals = [](const std::filesystem::path& path, std::u8string_view expected) {
+        auto name = path.filename().u8string();
+        std::transform(name.begin(), name.end(), name.begin(), [](char8_t c) {
+            return static_cast<char8_t>(std::tolower(static_cast<unsigned char>(c)));
+        });
+        return name == expected;
+    };
+    const auto package = main.parent_path().parent_path();
+    if (!equals(main, u8"main") || !equals(main.parent_path(), u8"exefs")) {
+        return false;
+    }
+
+    // Numbered edition programs are stored in program/<index>; consolidated Switch 2
+    // packages may instead be program1 itself, either next to that wrapper or directly
+    // under updates/<version>.
+    std::filesystem::path storage;
+    if (equals(package, u8"0") || equals(package, u8"1")) {
+        if (!equals(package.parent_path(), u8"program")) {
+            return false;
+        }
+        storage = package.parent_path().parent_path();
+    } else if (equals(package, u8"program1")) {
+        storage = equals(package.parent_path(), u8"program") ? package.parent_path().parent_path()
+                                                              : package.parent_path();
+    } else {
+        return false;
+    }
+
+    if (equals(storage, u8"base") || equals(storage.parent_path(), u8"upgrade")) {
+        return true;
+    }
+    const auto name = Loader::LooseDirectoryDetail::Name(storage);
+    u64 version{};
+    const auto parsed = std::from_chars(name.data(), name.data() + name.size(), version);
+    return equals(storage.parent_path(), u8"updates") && !name.empty() &&
+           parsed.ec == std::errc{} && parsed.ptr == name.data() + name.size();
+}
+
 template <typename Supported, typename Stopped>
 Result Discover(const std::filesystem::path& root, bool deep, Supported supported,
                 Stopped stopped) {
@@ -34,14 +75,31 @@ Result Discover(const std::filesystem::path& root, bool deep, Supported supporte
     Result result;
     std::unordered_set<fs::path> files;
     std::unordered_set<fs::path> directories;
-    const auto add_file = [&](const fs::path& path) {
-        if (files.insert(path).second) {
-            result.files.push_back(path);
-        }
-    };
     const auto watch = [&](const fs::path& path) {
         if (directories.insert(path).second) {
             result.directories.push_back(path);
+        }
+    };
+    const auto add_file = [&](const fs::path& path) {
+        fs::path chosen = path;
+        if (path.filename() == "main") {
+            if (const auto game_root = Loader::LooseGameRootFromMain(path)) {
+                if (const auto preferred = Loader::ResolveLooseProgramPath(*game_root);
+                    preferred && IsUpgradeProgramMain(*preferred)) {
+                    chosen = *preferred;
+                    // Watch the storage levels too, so a newly added program is discovered.
+                    for (auto directory = chosen.parent_path(); !directory.empty();
+                         directory = directory.parent_path()) {
+                        watch(directory);
+                        if (directory == *game_root || directory == directory.parent_path()) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (files.insert(chosen).second) {
+            result.files.push_back(std::move(chosen));
         }
     };
     const auto probe = [&](const fs::path& path) {
@@ -51,6 +109,11 @@ Result Discover(const std::filesystem::path& root, bool deep, Supported supporte
         }
     };
     const auto probe_layouts = [&](const fs::path& path) {
+        if (const auto preferred = Loader::ResolveLooseProgramPath(path);
+            preferred && IsUpgradeProgramMain(*preferred)) {
+            probe(preferred->parent_path());
+            return;
+        }
         for (const auto& content : {path, path / "base"}) {
             probe(content / "exefs");
             const auto updates = content / "updates";
@@ -95,6 +158,9 @@ Result Discover(const std::filesystem::path& root, bool deep, Supported supporte
                 });
                 if (name == u8"romfs" && IsExeFS(directory / "exefs")) {
                     ++result.skipped_romfs;
+                    continue;
+                }
+                if (name == u8"dlc" && Loader::ResolveLooseProgramPath(directory)) {
                     continue;
                 }
                 if (deep || depth == 0) {

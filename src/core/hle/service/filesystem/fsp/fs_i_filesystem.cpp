@@ -102,8 +102,14 @@ Result IFileSystem::OpenFile(OutInterface<IFile> out_interface,
     LOG_DEBUG(Service_FS, "called. file={}, mode={}", path->str, mode);
 
     FileSys::VirtualFile vfs_file{};
-    R_TRY(backend->OpenFile(&vfs_file, FileSys::Path(path->str),
-                            static_cast<FileSys::OpenMode>(mode)));
+    const Result rc = backend->OpenFile(&vfs_file, FileSys::Path(path->str),
+                                        static_cast<FileSys::OpenMode>(mode));
+    if (R_FAILED(rc)) {
+        LOG_WARNING(Service_FS, "Failed to open file '{}' (mode={}): module={} description={}",
+                    path->str, mode, static_cast<u32>(rc.GetModule()),
+                    static_cast<u32>(rc.GetDescription()));
+        R_RETURN(rc);
+    }
 
     *out_interface = std::make_shared<IFile>(system, vfs_file);
     R_SUCCEED();
@@ -115,8 +121,14 @@ Result IFileSystem::OpenDirectory(OutInterface<IDirectory> out_interface,
     LOG_DEBUG(Service_FS, "called. directory={}, mode={}", path->str, mode);
 
     FileSys::VirtualDir vfs_dir{};
-    R_TRY(backend->OpenDirectory(&vfs_dir, FileSys::Path(path->str),
-                                 static_cast<FileSys::OpenDirectoryMode>(mode)));
+    const Result rc = backend->OpenDirectory(&vfs_dir, FileSys::Path(path->str),
+                                             static_cast<FileSys::OpenDirectoryMode>(mode));
+    if (R_FAILED(rc)) {
+        LOG_WARNING(Service_FS, "Failed to open directory '{}' (mode={}): module={} description={}",
+                    path->str, mode, static_cast<u32>(rc.GetModule()),
+                    static_cast<u32>(rc.GetDescription()));
+        R_RETURN(rc);
+    }
 
     *out_interface = std::make_shared<IDirectory>(system, vfs_dir,
                                                   static_cast<FileSys::OpenDirectoryMode>(mode));

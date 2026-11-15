@@ -87,12 +87,19 @@ void EncryptSharedFont(const std::vector<u32>& input, std::vector<u8>& output, s
 
 class INx2FontService final : public ServiceFramework<INx2FontService> {
 public:
-    explicit INx2FontService(Core::System& system_, std::vector<FontRegion> regions_)
-        : ServiceFramework{system_, "nx2:pl:font"}, regions{std::move(regions_)} {
+    explicit INx2FontService(Core::System& system_, Kernel::KTransferMemory* memory_,
+                             std::vector<FontRegion> regions_)
+        : ServiceFramework{system_, "nx2:pl:font"}, memory{memory_}, regions{std::move(regions_)} {
+        memory->Open(kernel);
         static const FunctionInfo functions[] = {
             {0, &INx2FontService::GetFontData, "GetFontData"},
+            {1, &INx2FontService::GetFontDataSet, "GetFontDataSet"},
         };
         RegisterHandlers(functions);
+    }
+
+    ~INx2FontService() override {
+        memory->Close(kernel);
     }
 
 private:
@@ -111,6 +118,34 @@ private:
         rb.Push<u32>(region.size);
     }
 
+    struct Descriptor {
+        u32_le flags{};
+        u32_le offset{};
+        u32_le size{};
+    };
+    static_assert(sizeof(Descriptor) == 12);
+
+    void GetFontDataSet(HLERequestContext& ctx) {
+        const auto types = ctx.ReadBuffer();
+        const auto capacity = ctx.GetWriteBufferSize() / sizeof(Descriptor);
+        std::vector<Descriptor> descriptors;
+        for (const auto type : types) {
+            if (descriptors.size() == capacity) {
+                break;
+            }
+            if (type < regions.size() && regions[type].size != 0) {
+                descriptors.push_back({0, regions[type].offset, regions[type].size});
+            }
+        }
+        ctx.WriteBuffer(descriptors);
+        IPC::ResponseBuilder rb{ctx, 4};
+        rb.Push(ResultSuccess);
+        rb.Push<u32>(descriptors.empty() ? 0 : 1);
+        rb.Push<u32>(static_cast<u32>(descriptors.size()));
+    }
+
+    // The SDK closes its copy handle after OpenFont. Keep the transferred pages alive.
+    Kernel::KTransferMemory* memory;
     std::vector<FontRegion> regions;
 };
 
@@ -156,6 +191,7 @@ IPlatformServiceManager::IPlatformServiceManager(Core::System& system_, const ch
         {2100, &IPlatformServiceManager::RequestLoadNxFont, "RequestLoadNxFont"},
         {2000, &IPlatformServiceManager::GetBuiltInFontSharedMemory, "GetBuiltInFontSharedMemory (Switch 2)"},
         {2010, &IPlatformServiceManager::GetBuiltInFontData, "GetBuiltInFontData (Switch 2)"},
+        {2020, &IPlatformServiceManager::GetBuiltInFontDataSet, "GetBuiltInFontDataSet (Switch 2)"},
     };
     // clang-format on
     RegisterHandlers(functions);
@@ -252,7 +288,7 @@ void IPlatformServiceManager::RequestLoadNxFont(HLERequestContext& ctx) {
                                     impl->builtin_font_regions.end()};
     IPC::ResponseBuilder rb{ctx, 2, 0, 1};
     rb.Push(ResultSuccess);
-    rb.PushIpcInterface<INx2FontService>(ctx, system, std::move(regions));
+    rb.PushIpcInterface<INx2FontService>(ctx, system, transfer, std::move(regions));
 }
 
 // Switch 2: the shared memory GetBuiltInFontData offsets point into (copy handle, u32 size); the
@@ -288,6 +324,36 @@ void IPlatformServiceManager::GetBuiltInFontSharedMemory(HLERequestContext& ctx)
     rb.Push(ResultSuccess);
     rb.Push<u32>(impl->builtin_font_memory_size);
     rb.PushCopyObjects(ctx, *impl->builtin_font_memory);
+}
+
+// The SDK accepts up to six u8 font types and a writable array of 12-byte descriptors.
+// Reply layout: bool available at offset 0, u32 descriptor count at offset 4.
+void IPlatformServiceManager::GetBuiltInFontDataSet(HLERequestContext& ctx) {
+    struct Descriptor {
+        u32_le flags;
+        u32_le offset;
+        u32_le size;
+    };
+    static_assert(sizeof(Descriptor) == 12);
+    const auto types = ctx.ReadBuffer();
+    const auto capacity = std::min<std::size_t>(6, ctx.GetWriteBufferSize() / sizeof(Descriptor));
+    const auto& regions = impl->builtin_font_regions;
+    std::vector<Descriptor> descriptors;
+    for (const auto type : types) {
+        if (descriptors.size() == capacity) {
+            break;
+        }
+        if (type < regions.size() && regions[type].size != 0) {
+            descriptors.push_back({0, regions[type].offset, regions[type].size});
+        }
+    }
+    ctx.WriteBuffer(descriptors);
+    LOG_INFO(Service_NS, "Built-in font set: {} requested, {} available", types.size(),
+             descriptors.size());
+    IPC::ResponseBuilder rb{ctx, 4};
+    rb.Push(ResultSuccess);
+    rb.Push<u32>(descriptors.empty() ? 0 : 1);
+    rb.Push<u32>(static_cast<u32>(descriptors.size()));
 }
 
 // nn::pl::GetBuiltInFontData(BuiltInFontDataOunce*, BuiltInFontTypeOunce, bool): returns a 16-byte

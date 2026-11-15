@@ -31,9 +31,11 @@
 #include "core/file_sys/fs_filesystem.h"
 #include "core/file_sys/nca_metadata.h"
 #include "core/file_sys/patch_manager.h"
+#include "core/file_sys/program_metadata.h"
 #include "core/file_sys/registered_cache.h"
 #include "core/file_sys/submission_package.h"
 #include "core/loader/loader.h"
+#include "core/loader/loose_directory.h"
 
 #include "qt_common/config/uisettings.h"
 #include "qt_common/qt_common.h"
@@ -190,6 +192,13 @@ QString FormatGameName(const std::string& physical_name) {
 // <game>/updates/<title id>/exefs/main) have no control data, so they are named after their
 // game folder.
 QString LooseExeFSName(const std::string& physical_name) {
+    const std::filesystem::path path{Common::FS::ToU8String(physical_name)};
+    if (const auto game_root = Loader::LooseGameRootFromMain(path)) {
+        if (const auto selected = Loader::ResolveLooseProgramPath(*game_root);
+            selected && GameListDiscovery::IsUpgradeProgramMain(*selected)) {
+            return QString::fromStdString(Common::FS::PathToUTF8String(game_root->filename()));
+        }
+    }
     QDir dir = QFileInfo(QString::fromStdString(physical_name)).dir();
     if (dir.dirName().compare(QStringLiteral("exefs"), Qt::CaseInsensitive) != 0 || !dir.cdUp()) {
         return {};
@@ -473,6 +482,21 @@ void GameListWorker::ScanFileSystem(ScanTarget target, const std::vector<std::fi
                     IsExtractedNCAMain(physical_name)) {
                     if (const QString loose = LooseExeFSName(physical_name); !loose.isEmpty()) {
                         name = loose.toStdString();
+                    }
+                    // A Switch 2 program dumped as an "update" of a Switch 1 base (Red Dead
+                    // Redemption) is the game's Switch 2 Edition; say so instead of "(update)".
+                    constexpr std::string_view UpdateSuffix = " (update)";
+                    const auto game_dir =
+                        std::filesystem::path{physical_name}.parent_path().parent_path().parent_path().parent_path();
+                    FileSys::ProgramMetadata base_meta;
+                    const auto base_npdm = vfs->OpenFile(
+                        Common::FS::PathToUTF8String(game_dir / "base" / "exefs" / "main.npdm"),
+                        FileSys::OpenMode::Read);
+                    if ((id >> 56) == 0x04 && name.ends_with(UpdateSuffix) && base_npdm != nullptr &&
+                        base_meta.Load(base_npdm) == Loader::ResultStatus::Success &&
+                        (base_meta.GetTitleID() >> 56) == 0x01) {
+                        name.replace(name.size() - UpdateSuffix.size(), UpdateSuffix.size(),
+                                     " (Switch 2 Edition)");
                     }
                 }
 

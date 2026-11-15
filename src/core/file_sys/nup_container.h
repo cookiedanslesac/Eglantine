@@ -120,6 +120,7 @@ public:
         u32 meta_size{};
 
         std::vector<u8> npdm;
+        std::vector<u8> nacp;
         std::string title_name;
         std::string publisher;
         std::string source_dump;
@@ -164,6 +165,16 @@ public:
     VirtualDir GetExeFSDir(std::size_t package_index);
     VirtualDir GetRomFSDir(std::size_t package_index);
     VirtualDir GetPackageDir(std::size_t package_index);
+
+    /// Indices of the newest usable add-on package per title belonging to this application.
+    std::vector<std::size_t> FindAddonPackages(u64 program_id) const;
+
+    /// Newest usable add-on RomFS per title belonging to this application.
+    std::vector<std::pair<u64, VirtualDir>> GetAddonRomFS(u64 program_id);
+
+    /// RomFS of the other programs of a multi-program application: the base packages after the
+    /// first, keyed by their program-index title ID.
+    std::vector<std::pair<u64, VirtualDir>> GetSiblingProgramRomFS();
 
     /// Stream-hashes every member file against its stored SHA-256.
     Loader::ResultStatus VerifyIntegrity(
