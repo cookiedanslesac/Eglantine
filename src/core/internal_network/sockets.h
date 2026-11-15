@@ -89,6 +89,8 @@ public:
 
     virtual Errno SetReuseAddr(bool enable) = 0;
 
+    virtual Errno SetReusePort(bool enable) = 0;
+
     virtual Errno SetKeepAlive(bool enable) = 0;
 
     virtual Errno SetBroadcast(bool enable) = 0;
@@ -173,6 +175,8 @@ public:
     Errno SetLinger(bool enable, u32 linger) override;
 
     Errno SetReuseAddr(bool enable) override;
+
+    Errno SetReusePort(bool enable) override;
 
     Errno SetKeepAlive(bool enable) override;
 
