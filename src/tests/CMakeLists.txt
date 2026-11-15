@@ -58,6 +58,7 @@ add_executable(tests
     core/nup_writer.cpp
     core/nup_zstd_read.cpp
     core/nx2_debug_server.cpp
+    core/wonder_fps_patch.cpp
     core/nx2_movie_pacing.cpp
     core/nx2_gpu_memory_registry.cpp
     core/priority_queue.cpp
